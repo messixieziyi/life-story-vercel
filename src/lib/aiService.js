@@ -19,6 +19,10 @@ export async function generateTagsAndCategory(eventData) {
   }
 
   try {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/e9bbd3f7-fa3e-4a44-b99c-a006c4ae5b13',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.js:21',message:'generateTagsAndCategory entry',data:{hasApiKey:!!apiKey,apiKeyLength:apiKey?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    
     const { title, description = '', date, importance, emotions = [] } = eventData
     
     const dateStr = date instanceof Date 
@@ -46,29 +50,41 @@ export async function generateTagsAndCategory(eventData) {
 
 只返回JSON，不要其他文字。`
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-flash-latest:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: prompt,
-                },
-              ],
-            },
-          ],
-        }),
-      }
-    )
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent`
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/e9bbd3f7-fa3e-4a44-b99c-a006c4ae5b13',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.js:53',message:'Before API call',data:{url:apiUrl,model:'gemini-3-flash-preview',apiVersion:'v1beta',usingHeader:true},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'FIXED'})}).catch(()=>{});
+    // #endregion
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text: prompt,
+              },
+            ],
+          },
+        ],
+      }),
+    })
+
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/e9bbd3f7-fa3e-4a44-b99c-a006c4ae5b13',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.js:89',message:'After API call',data:{status:response.status,statusText:response.statusText,ok:response.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B,C,D'})}).catch(()=>{});
+    // #endregion
 
     if (!response.ok) {
-      throw new Error(`API 错误: ${response.status}`)
+      const errorData = await response.json().catch(() => ({}))
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/e9bbd3f7-fa3e-4a44-b99c-a006c4ae5b13',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.js:94',message:'API error response',data:{status:response.status,errorMessage:errorData.error?.message,errorCode:errorData.error?.code,fullError:JSON.stringify(errorData).substring(0,500)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B,C,D'})}).catch(()=>{});
+      // #endregion
+      throw new Error(errorData.error?.message || `API 错误: ${response.status}`)
     }
 
     const data = await response.json()
