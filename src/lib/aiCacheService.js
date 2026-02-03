@@ -10,7 +10,11 @@ import { getSupabaseClient } from './supabase'
  */
 export const ANALYSIS_TYPES = {
   AI_INSIGHT: 'ai_insight',      // AI 复盘
-  FATE_ANALYSIS: 'fate_analysis', // 星盘命运分析
+  FATE_ANALYSIS: 'fate_analysis', // 星盘命运分析（基础类型）
+  FATE_ANALYSIS_PAST: 'fate_analysis_past', // 回顾过去
+  FATE_ANALYSIS_FUTURE7: 'fate_analysis_future7', // 未来7天
+  FATE_ANALYSIS_MONTHLY: 'fate_analysis_monthly', // 本月运势
+  FATE_ANALYSIS_YEARLY: 'fate_analysis_yearly', // 年度展望
 }
 
 /**
@@ -32,18 +36,36 @@ function generateCacheKey(type, params) {
         }))
       : 0
     return `${type}_${recordCount}_${lastUpdated}`
-  } else if (type === ANALYSIS_TYPES.FATE_ANALYSIS) {
-    // 星盘分析：基于生日和记录数量
-    const { profile, records } = params
+  } else if (type.startsWith('fate_analysis')) {
+    // 星盘分析：基于生日、记录数量和日期（不同类型需要不同的日期范围）
+    const { profile, records, analysisType } = params
     const birthday = profile?.birthday || ''
     const recordCount = records?.length || 0
+    
+    // 根据分析类型添加日期范围标识
+    const now = new Date()
+    let dateKey = ''
+    if (type === ANALYSIS_TYPES.FATE_ANALYSIS_PAST) {
+      // 回顾过去：基于当前日期，每月更新一次
+      dateKey = `${now.getFullYear()}_${now.getMonth()}`
+    } else if (type === ANALYSIS_TYPES.FATE_ANALYSIS_FUTURE7) {
+      // 未来7天：每天更新
+      dateKey = `${now.getFullYear()}_${now.getMonth()}_${now.getDate()}`
+    } else if (type === ANALYSIS_TYPES.FATE_ANALYSIS_MONTHLY) {
+      // 本月运势：每月更新
+      dateKey = `${now.getFullYear()}_${now.getMonth()}`
+    } else if (type === ANALYSIS_TYPES.FATE_ANALYSIS_YEARLY) {
+      // 年度展望：每年更新
+      dateKey = `${now.getFullYear()}`
+    }
+    
     const lastUpdated = records?.length > 0
       ? Math.max(...records.map(r => {
           const date = r.updated_at || r.created_at || r.date
           return date ? new Date(date).getTime() : 0
         }))
       : 0
-    return `${type}_${birthday}_${recordCount}_${lastUpdated}`
+    return `${type}_${birthday}_${recordCount}_${dateKey}_${lastUpdated}`
   }
   return `${type}_${Date.now()}`
 }
@@ -85,8 +107,18 @@ export async function getCachedAnalysis(userId, type, params = {}) {
       return null
     }
 
+    // 尝试解析 JSON（如果是对象格式）
+    let result = data.analysis_result
+    try {
+      if (typeof result === 'string') {
+        result = JSON.parse(result)
+      }
+    } catch (e) {
+      // 如果不是 JSON，保持原样（可能是旧的 Markdown 格式）
+    }
+
     return {
-      result: data.analysis_result,
+      result: result,
       cacheKey: data.cache_key,
       updatedAt: data.updated_at,
     }
@@ -100,7 +132,7 @@ export async function getCachedAnalysis(userId, type, params = {}) {
  * 保存分析结果到缓存
  * @param {string} userId - 用户ID
  * @param {string} type - 分析类型
- * @param {string} result - 分析结果（Markdown 格式）
+ * @param {string|Object} result - 分析结果（Markdown 格式字符串或对象）
  * @param {Object} params - 参数对象（用于生成缓存键）
  * @returns {Promise<Object>} 保存的缓存数据
  */
@@ -113,13 +145,16 @@ export async function saveCachedAnalysis(userId, type, result, params = {}) {
   try {
     const cacheKey = generateCacheKey(type, params)
 
+    // 如果是对象，序列化为 JSON 字符串
+    const resultToSave = typeof result === 'object' ? JSON.stringify(result) : result
+
     // 使用 upsert 操作（如果存在则更新，不存在则插入）
     const { data, error } = await supabase
       .from('ai_analysis_cache')
       .upsert({
         user_id: userId,
         analysis_type: type,
-        analysis_result: result,
+        analysis_result: resultToSave,
         cache_key: cacheKey,
         updated_at: new Date().toISOString(),
       }, {

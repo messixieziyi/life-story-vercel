@@ -74,13 +74,16 @@ function formatChartData(chartData) {
  * 分析命运
  * @param {Object} chartData - 星盘数据
  * @param {Array} lifeRecords - 人生记录（可选）
- * @returns {Promise<string>} Markdown 格式的分析结果
+ * @param {string} analysisType - 分析类型：'past' | 'future7days' | 'monthly' | 'yearly'
+ * @returns {Promise<Object>} 结构化的分析结果
  */
-export async function analyzeFate(chartData, lifeRecords = []) {
+export async function analyzeFate(chartData, lifeRecords = [], analysisType = 'future7days') {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY
   
   if (!apiKey || apiKey === 'your_gemini_api_key') {
-    return '## 命运分析\n\n请配置 Gemini API Key 以使用此功能。'
+    return {
+      error: '请配置 Gemini API Key 以使用此功能。'
+    }
   }
 
   try {
@@ -99,50 +102,109 @@ export async function analyzeFate(chartData, lifeRecords = []) {
       }).join('\n')
     }
 
+    // 计算当前日期
+    const now = new Date()
+    const currentYear = now.getFullYear()
+    const currentMonth = now.getMonth() + 1
+    const currentDate = now.getDate()
+    
+    // 根据分析类型生成不同的提示词
+    let typePrompt = ''
+    let guidanceLabel = '未来指引'
+    let dateRange = ''
+    
+    switch (analysisType) {
+      case 'past':
+        typePrompt = `请基于当前日期（${currentYear}年${currentMonth}月${currentDate}日），回顾过去的重要星象周期和人生记录，分析过去对现在的影响。重点分析：
+- 过去的重要星象周期（如土星回归、木星周期等）
+- 人生记录中体现的成长轨迹
+- 过去经历如何塑造了现在的你
+- 从过去可以学到什么经验教训`
+        guidanceLabel = '过去回顾'
+        dateRange = '过去的重要时期'
+        break
+      case 'future7days':
+        const nextWeek = new Date(now)
+        nextWeek.setDate(now.getDate() + 7)
+        typePrompt = `请基于当前日期（${currentYear}年${currentMonth}月${currentDate}日）和未来7天的星象变化，生成"未来7天"的运势分析。重点分析：
+- 未来7天内的主要星象变化
+- 行进行星对个人星盘的影响
+- 需要注意的关键时间节点
+- 未来7天的能量趋势和机会`
+        guidanceLabel = '未来指引'
+        dateRange = '未来7天'
+        break
+      case 'monthly':
+        const monthStart = new Date(currentYear, currentMonth - 1, 1)
+        const monthEnd = new Date(currentYear, currentMonth, 0)
+        typePrompt = `请基于当前日期（${currentYear}年${currentMonth}月${currentDate}日），分析本月（${currentMonth}月）的整体运势。重点分析：
+- 本月的主要星象周期
+- 本月各宫位的能量变化
+- 本月的重要时间节点
+- 本月的整体能量趋势和主题`
+        guidanceLabel = '本月指引'
+        dateRange = `本月（${currentMonth}月）`
+        break
+      case 'yearly':
+        typePrompt = `请基于当前日期（${currentYear}年${currentMonth}月${currentDate}日），分析本年度（${currentYear}年）的整体运势和展望。重点分析：
+- 本年度的重要星象周期（如木星周期、土星周期等）
+- 本年度各宫位的能量主题
+- 本年度的重要时间节点和转折点
+- 本年度的整体能量趋势、机遇和挑战`
+        guidanceLabel = '年度指引'
+        dateRange = `本年度（${currentYear}年）`
+        break
+      default:
+        typePrompt = `请基于当前日期（${currentYear}年${currentMonth}月${currentDate}日）和未来7天的星象变化，生成"未来7天"的运势分析。`
+        guidanceLabel = '未来指引'
+        dateRange = '未来7天'
+    }
+    
     const prompt = `你是一位资深的占星师，拥有20年的占星分析经验。请基于以下星盘数据，结合用户的人生记录（如果有），进行深度分析。
 
 ${chartText}${recordsText}
 
-请以 Markdown 格式输出分析结果，必须包含以下三个板块：
-
-## 核心性格
-
-分析用户的核心性格特质、行为模式、内在驱动力。结合上升星座、太阳星座、月亮星座以及主要相位，描述用户的性格画像。要求：
-- 深入分析，不要泛泛而谈
-- 结合具体行星位置和相位
-- 语言要专业但易懂
-- 300-500字
-
-## 天赋领域
-
-分析用户在哪些领域具有天赋和潜能。结合：
-- 行星落入的宫位（如10宫代表事业、5宫代表创作等）
-- 行星的星座特质
-- 主要相位的影响
-- 人生记录中体现的倾向（如果有）
-要求：
-- 指出2-4个具体领域
-- 每个领域说明原因和表现
-- 200-400字
-
-## 避坑指南
-
-基于星盘的挑战相位和困难配置，给出人生建议和避坑指南。包括：
-- 需要注意的性格盲点
-- 容易陷入的困境
-- 建议的成长方向
-- 如何利用星盘能量
-要求：
-- 具体可操作
-- 不要过于负面，要平衡
-- 200-400字
+${typePrompt}
 
 **重要要求：**
-1. 输出必须是纯 Markdown 格式
-2. 不要添加额外的说明文字
-3. 三个板块必须都有内容
-4. 语言要专业、深入、有洞察力
-5. 结合人生记录时要自然融入，不要生硬列举`
+1. 必须输出严格的JSON格式，不要有任何额外的文字说明
+2. JSON结构如下：
+{
+  "futureGuidance": {
+    "paragraph1": "第一段文字（300-500字，描述${dateRange}的整体能量和主要星象影响）",
+    "paragraph2": "第二段文字（200-300字，给出具体建议和注意事项）"
+  },
+  "spiritualityIndex": 78,
+  "career": {
+    "title": "事业",
+    "content": "事业方面的详细分析（300-400字，结合相关宫位和星象）"
+  },
+  "emotion": {
+    "title": "情感",
+    "content": "情感与人际关系方面的详细分析（300-400字，结合相关宫位和星象）"
+  },
+  "energy": {
+    "title": "能量",
+    "content": "身心健康和能量状态方面的详细分析（300-400字，结合相关宫位和星象）"
+  },
+  "keyNodes": [
+    {
+      "date": "${analysisType === 'past' ? '2025-01-15' : analysisType === 'monthly' ? `${currentYear}-${String(currentMonth).padStart(2, '0')}-15` : analysisType === 'yearly' ? `${currentYear}-06-15` : '2026-02-03'}",
+      "description": "关键星象节点的描述"
+    }
+  ]
+}
+
+3. 关键节点（keyNodes）需要生成3-5个：
+   - 如果是"回顾过去"：日期应该是过去的重要日期
+   - 如果是"未来7天"：日期应该是未来7天内的具体日期
+   - 如果是"本月运势"：日期应该是本月内的具体日期
+   - 如果是"年度展望"：日期应该是本年度的重要日期
+4. 灵性指数（spiritualityIndex）应该是0-100之间的整数，基于星盘中的灵性相关配置（如第十二宫、海王星、双鱼座等）
+5. 所有文字内容要专业、深入、有洞察力，结合具体的行星位置、宫位和相位
+6. 语言要符合占星术语，但也要易懂
+7. 日期格式必须是 YYYY-MM-DD
+8. 根据分析类型调整内容的重点和深度`
 
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent`
     
@@ -169,14 +231,51 @@ ${chartText}${recordsText}
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
     
     // 清理可能的代码块标记
-    let result = text.trim()
-    if (result.startsWith('```')) {
-      result = result.replace(/```markdown\n?/g, '').replace(/```\n?/g, '').trim()
+    let cleanedText = text.trim()
+    if (cleanedText.startsWith('```')) {
+      cleanedText = cleanedText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     }
     
-    return result || '## 命运分析\n\n分析结果生成失败，请稍后重试。'
+    // 尝试解析JSON
+    try {
+      const result = JSON.parse(cleanedText)
+      
+      // 验证必要字段
+      if (!result.futureGuidance || !result.career || !result.emotion || !result.energy || !result.keyNodes) {
+        throw new Error('返回的JSON结构不完整')
+      }
+      
+      return result
+    } catch (parseError) {
+      console.error('解析JSON失败:', parseError)
+      console.error('原始文本:', cleanedText)
+      
+      // 如果解析失败，返回一个默认结构
+      return {
+        futureGuidance: {
+          paragraph1: '分析结果解析失败，请稍后重试。',
+          paragraph2: ''
+        },
+        spiritualityIndex: 50,
+        career: {
+          title: '事业',
+          content: '分析结果解析失败。'
+        },
+        emotion: {
+          title: '情感',
+          content: '分析结果解析失败。'
+        },
+        energy: {
+          title: '能量',
+          content: '分析结果解析失败。'
+        },
+        keyNodes: []
+      }
+    }
   } catch (error) {
     console.error('命运分析失败:', error)
-    return `## 命运分析\n\n分析失败：${error.message || '未知错误'}\n\n请检查网络连接和 API 配置。`
+    return {
+      error: `分析失败：${error.message || '未知错误'}`
+    }
   }
 }
