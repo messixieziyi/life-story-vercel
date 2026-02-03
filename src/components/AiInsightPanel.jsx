@@ -9,6 +9,46 @@ export default function AiInsightPanel({ records }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
+  // 带重试的 API 调用函数
+  const fetchWithRetry = async (apiUrl, options, maxRetries = 3) => {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await fetch(apiUrl, options)
+        
+        if (response.ok) {
+          return response
+        }
+        
+        const errorData = await response.json().catch(() => ({}))
+        const errorMessage = errorData.error?.message || ''
+        
+        // 如果是过载错误且还有重试机会，则重试
+        if ((errorMessage.includes('overloaded') || errorMessage.includes('try again')) && attempt < maxRetries) {
+          const delay = Math.min(1000 * Math.pow(2, attempt), 10000) // 指数退避，最多10秒
+          await new Promise(resolve => setTimeout(resolve, delay))
+          continue
+        }
+        
+        // 如果不是可重试的错误，直接抛出
+        throw new Error(errorMessage || `API 错误: ${response.status}`)
+      } catch (error) {
+        // 如果是最后一次尝试，抛出错误
+        if (attempt === maxRetries) {
+          throw error
+        }
+        
+        // 如果是网络错误，也重试
+        if (error.message && !error.message.includes('API 错误')) {
+          const delay = Math.min(1000 * Math.pow(2, attempt), 10000)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          continue
+        }
+        
+        throw error
+      }
+    }
+  }
+
   const fetchAiSummary = async () => {
     if (records.length === 0) {
       alert('请先添加一些记录，才能进行 AI 复盘')
@@ -111,32 +151,26 @@ ${recordsText}
 
 请开始分析：`
 
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': apiKey,
-          },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  {
-                    text: prompt,
-                  },
-                ],
-              },
-            ],
-          }),
-        }
-      )
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error?.message || `API 错误: ${response.status}`)
-      }
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent`
+      
+      const response = await fetchWithRetry(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: prompt,
+                },
+              ],
+            },
+          ],
+        }),
+      })
 
       const data = await response.json()
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '无法生成内容'

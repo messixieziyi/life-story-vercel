@@ -3,6 +3,69 @@
  */
 
 /**
+ * 带重试的 API 调用函数
+ * @param {string} apiUrl - API URL
+ * @param {Object} options - Fetch options
+ * @param {number} maxRetries - 最大重试次数
+ * @returns {Promise<Response>}
+ */
+async function fetchWithRetry(apiUrl, options, maxRetries = 3) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/e9bbd3f7-fa3e-4a44-b99c-a006c4ae5b13',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.js:15',message:'API call attempt',data:{attempt:attempt+1,maxRetries:maxRetries+1},timestamp:Date.now(),sessionId:'debug-session',runId:'retry-fix',hypothesisId:'RETRY'})}).catch(()=>{});
+      // #endregion
+      
+      const response = await fetch(apiUrl, options)
+      
+      if (response.ok) {
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/e9bbd3f7-fa3e-4a44-b99c-a006c4ae5b13',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.js:22',message:'API call success',data:{attempt:attempt+1,status:response.status},timestamp:Date.now(),sessionId:'debug-session',runId:'retry-fix',hypothesisId:'RETRY'})}).catch(()=>{});
+        // #endregion
+        return response
+      }
+      
+      const errorData = await response.json().catch(() => ({}))
+      const errorMessage = errorData.error?.message || ''
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/e9bbd3f7-fa3e-4a44-b99c-a006c4ae5b13',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.js:30',message:'API call error',data:{attempt:attempt+1,status:response.status,errorMessage:errorMessage,isOverloaded:errorMessage.includes('overloaded')},timestamp:Date.now(),sessionId:'debug-session',runId:'retry-fix',hypothesisId:'RETRY'})}).catch(()=>{});
+      // #endregion
+      
+      // 如果是过载错误且还有重试机会，则重试
+      if ((errorMessage.includes('overloaded') || errorMessage.includes('try again')) && attempt < maxRetries) {
+        const delay = Math.min(1000 * Math.pow(2, attempt), 10000) // 指数退避，最多10秒
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/e9bbd3f7-fa3e-4a44-b99c-a006c4ae5b13',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.js:37',message:'Retrying after delay',data:{attempt:attempt+1,delayMs:delay},timestamp:Date.now(),sessionId:'debug-session',runId:'retry-fix',hypothesisId:'RETRY'})}).catch(()=>{});
+        // #endregion
+        await new Promise(resolve => setTimeout(resolve, delay))
+        continue
+      }
+      
+      // 如果不是可重试的错误，直接抛出
+      throw new Error(errorMessage || `API 错误: ${response.status}`)
+    } catch (error) {
+      // 如果是最后一次尝试，抛出错误
+      if (attempt === maxRetries) {
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/e9bbd3f7-fa3e-4a44-b99c-a006c4ae5b13',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.js:47',message:'All retries exhausted',data:{attempt:attempt+1,error:error.message},timestamp:Date.now(),sessionId:'debug-session',runId:'retry-fix',hypothesisId:'RETRY'})}).catch(()=>{});
+        // #endregion
+        throw error
+      }
+      
+      // 如果是网络错误，也重试
+      if (error.message && !error.message.includes('API 错误')) {
+        const delay = Math.min(1000 * Math.pow(2, attempt), 10000)
+        await new Promise(resolve => setTimeout(resolve, delay))
+        continue
+      }
+      
+      throw error
+    }
+  }
+}
+
+/**
  * 使用 Gemini API 自动生成事件标签和类别
  * @param {Object} eventData - 事件数据 { title, description, date, importance, emotions }
  * @returns {Promise<{tags: string[], category: string}>}
@@ -53,10 +116,10 @@ export async function generateTagsAndCategory(eventData) {
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent`
     
     // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/e9bbd3f7-fa3e-4a44-b99c-a006c4ae5b13',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.js:53',message:'Before API call',data:{url:apiUrl,model:'gemini-3-flash-preview',apiVersion:'v1beta',usingHeader:true},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'FIXED'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7243/ingest/e9bbd3f7-fa3e-4a44-b99c-a006c4ae5b13',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.js:108',message:'Before API call with retry',data:{url:apiUrl,model:'gemini-3-flash-preview',apiVersion:'v1beta'},timestamp:Date.now(),sessionId:'debug-session',runId:'retry-fix',hypothesisId:'RETRY'})}).catch(()=>{});
     // #endregion
 
-    const response = await fetch(apiUrl, {
+    const response = await fetchWithRetry(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -74,18 +137,6 @@ export async function generateTagsAndCategory(eventData) {
         ],
       }),
     })
-
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/e9bbd3f7-fa3e-4a44-b99c-a006c4ae5b13',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.js:89',message:'After API call',data:{status:response.status,statusText:response.statusText,ok:response.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B,C,D'})}).catch(()=>{});
-    // #endregion
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/e9bbd3f7-fa3e-4a44-b99c-a006c4ae5b13',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.js:94',message:'API error response',data:{status:response.status,errorMessage:errorData.error?.message,errorCode:errorData.error?.code,fullError:JSON.stringify(errorData).substring(0,500)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B,C,D'})}).catch(()=>{});
-      // #endregion
-      throw new Error(errorData.error?.message || `API 错误: ${response.status}`)
-    }
 
     const data = await response.json()
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}'
