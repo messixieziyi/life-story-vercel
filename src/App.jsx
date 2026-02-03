@@ -12,7 +12,7 @@ import { onAuthStateChange, logout } from './lib/supabase'
 import { Heart, Plus, Download, Mic, LogOut, User } from 'lucide-react'
 
 function App() {
-  const [user, setUser] = useState(null) // Firebase User 对象
+  const [user, setUser] = useState(null) // Supabase User 对象
   const [userId, setUserId] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('overview')
@@ -92,6 +92,7 @@ function App() {
 
       // 保存所有事件
       let successCount = 0
+      let failedEvents = []
       for (let i = 0; i < eventsToAdd.length; i++) {
         const event = eventsToAdd[i]
         try {
@@ -108,13 +109,19 @@ function App() {
           }
         } catch (err) {
           console.error(`添加事件失败: ${event.title}`, err)
+          failedEvents.push({ title: event.title, error: err.message || String(err) })
         }
       }
       
       // 等待记录同步
       await new Promise(resolve => setTimeout(resolve, 1000))
       
-      alert(`成功添加 ${successCount} 个示例事件！\n\n提示：可以在编辑事件时手动建立关联关系。`)
+      if (failedEvents.length > 0) {
+        const errorMsg = failedEvents.map(f => `- ${f.title}: ${f.error}`).join('\n')
+        alert(`成功添加 ${successCount} 个示例事件，${failedEvents.length} 个失败：\n\n${errorMsg}\n\n提示：可以在编辑事件时手动建立关联关系。`)
+      } else {
+        alert(`成功添加 ${successCount} 个示例事件！\n\n提示：可以在编辑事件时手动建立关联关系。`)
+      }
     } catch (error) {
       console.error('加载示例事件失败:', error)
       alert('加载示例事件失败，请重试')
@@ -125,10 +132,11 @@ function App() {
 
   // 监听认证状态
   useEffect(() => {
-    const unsubscribe = onAuthStateChange((firebaseUser) => {
-      if (firebaseUser) {
-        setUser(firebaseUser)
-        setUserId(firebaseUser.uid)
+    const unsubscribe = onAuthStateChange((supabaseUser) => {
+      if (supabaseUser) {
+        setUser(supabaseUser)
+        // Supabase 用户对象使用 id 而不是 uid
+        setUserId(supabaseUser.id)
       } else {
         setUser(null)
         setUserId(null)

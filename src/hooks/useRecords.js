@@ -180,7 +180,23 @@ export const useRecords = (userId) => {
         .single()
 
       if (insertError) {
-        throw insertError
+        console.error('Supabase 插入错误详情:', {
+          message: insertError.message,
+          details: insertError.details,
+          hint: insertError.hint,
+          code: insertError.code,
+          data: dataToSave
+        })
+        // 提供更友好的错误信息
+        let errorMessage = insertError.message || '插入失败'
+        if (insertError.code === '42501') {
+          errorMessage = '权限不足：请检查 RLS 策略或用户认证状态'
+        } else if (insertError.code === '23503') {
+          errorMessage = '外键约束失败：请检查 user_id 是否正确'
+        } else if (insertError.code === '23505') {
+          errorMessage = '唯一约束冲突：记录已存在'
+        }
+        throw new Error(errorMessage)
       }
 
       // 异步生成标签和类别
