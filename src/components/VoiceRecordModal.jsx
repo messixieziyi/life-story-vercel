@@ -109,13 +109,41 @@ export default function VoiceRecordModal({ isOpen, onClose, onSave, allRecords =
       // 填充表单
       setTitle(analyzed.title || '')
       setDescription(analyzed.description || '')
-      setDate(analyzed.date ? new Date(analyzed.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0])
+      
+      // 处理日期：确保是有效的日期对象
+      let eventDate = new Date()
+      if (analyzed.date) {
+        try {
+          eventDate = analyzed.date instanceof Date ? analyzed.date : new Date(analyzed.date)
+          // 验证日期是否有效
+          if (isNaN(eventDate.getTime())) {
+            eventDate = new Date()
+          }
+        } catch (e) {
+          eventDate = new Date()
+        }
+      }
+      setDate(eventDate.toISOString().split('T')[0])
+      
+      // 处理事件类型：从分析结果中获取，如果没有则默认为 EVENT
+      if (analyzed.type) {
+        // 确保类型值有效
+        if (analyzed.type === 'achievement') {
+          setType(EventType.ACHIEVEMENT)
+        } else if (analyzed.type === 'wish') {
+          setType(EventType.WISH)
+        } else {
+          setType(EventType.EVENT)
+        }
+      } else {
+        setType(EventType.EVENT)
+      }
+      
       setImportance(analyzed.importance || ImportanceLevel.NORMAL)
       setEmotions(analyzed.emotions || [])
       setEmotionNote(analyzed.emotionNote || '')
       setLocation(analyzed.location?.name || '')
       setParticipants(analyzed.participants?.join(', ') || '')
-      setType(EventType.EVENT)
     } catch (err) {
       console.error('分析失败:', err)
       setError('分析失败，请重试')

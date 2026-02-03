@@ -1,14 +1,54 @@
-import { useState } from 'react'
-import { Sparkles, Loader2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Sparkles, Loader2, RefreshCw } from 'lucide-react'
 import { marked } from 'marked'
+import { getCachedAnalysis, saveCachedAnalysis, deleteCachedAnalysis, ANALYSIS_TYPES } from '../lib/aiCacheService'
 
 /**
  * AI 复盘面板组件
  */
-export default function AiInsightPanel({ records }) {
+export default function AiInsightPanel({ records, userId }) {
   const [insight, setInsight] = useState('')
   const [loading, setLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState(null)
+  const [isCached, setIsCached] = useState(false)
+  const [loadingCache, setLoadingCache] = useState(true)
+
+  // 组件加载时尝试从缓存加载
+  useEffect(() => {
+    if (userId && records) {
+      loadCachedAnalysis()
+    }
+  }, [userId, records])
+
+  // 从缓存加载分析结果
+  const loadCachedAnalysis = async () => {
+    if (!userId) {
+      setLoadingCache(false)
+      return
+    }
+
+    try {
+      setLoadingCache(true)
+      const cached = await getCachedAnalysis(
+        userId,
+        ANALYSIS_TYPES.AI_INSIGHT,
+        { records }
+      )
+
+      if (cached && cached.result) {
+        setInsight(cached.result)
+        setIsCached(true)
+      } else {
+        setIsCached(false)
+      }
+    } catch (error) {
+      console.error('加载缓存失败:', error)
+      setIsCached(false)
+    } finally {
+      setLoadingCache(false)
+    }
+  }
 
   // 带重试的 API 调用函数
   const fetchWithRetry = async (apiUrl, options, maxRetries = 3) => {
@@ -50,15 +90,52 @@ export default function AiInsightPanel({ records }) {
     }
   }
 
-  const fetchAiSummary = async () => {
+  // 刷新分析（强制重新分析）
+  const refreshAnalysis = async () => {
+    if (!userId) {
+      await fetchAiSummary(true)
+      return
+    }
+
+    try {
+      // 删除缓存
+      await deleteCachedAnalysis(userId, ANALYSIS_TYPES.AI_INSIGHT)
+      setIsCached(false)
+      // 重新分析
+      await fetchAiSummary(true)
+    } catch (error) {
+      console.error('刷新分析失败:', error)
+      await fetchAiSummary(true)
+    }
+  }
+
+  const fetchAiSummary = async (forceRefresh = false) => {
     if (records.length === 0) {
       alert('请先添加一些记录，才能进行 AI 复盘')
       return
     }
 
+    // 如果不是强制刷新，先检查缓存
+    if (!forceRefresh && userId) {
+      const cached = await getCachedAnalysis(
+        userId,
+        ANALYSIS_TYPES.AI_INSIGHT,
+        { records }
+      )
+
+      if (cached && cached.result) {
+        setInsight(cached.result)
+        setIsCached(true)
+        return
+      }
+    }
+
     setLoading(true)
+    setRefreshing(forceRefresh)
     setError(null)
-    setInsight('')
+    if (forceRefresh) {
+      setInsight('')
+    }
 
     try {
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY
@@ -177,11 +254,29 @@ ${recordsText}
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '无法生成内容'
 
       setInsight(text)
+      setIsCached(false)
+
+      // 保存到缓存
+      if (userId) {
+        try {
+          await saveCachedAnalysis(
+            userId,
+            ANALYSIS_TYPES.AI_INSIGHT,
+            text,
+            { records }
+          )
+          setIsCached(true)
+        } catch (error) {
+          console.error('保存缓存失败:', error)
+          // 不影响用户体验，继续显示结果
+        }
+      }
     } catch (err) {
       console.error('AI 复盘失败:', err)
       setError(err.message || '生成复盘失败，请检查 API 配置')
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }
 
@@ -192,25 +287,50 @@ ${recordsText}
           <h2 className="text-xl font-semibold text-slate-900 mb-2">AI 复盘</h2>
           <p className="text-sm text-slate-600">
             基于你的人生记录，AI 将为你提供客观的分析和洞察
+            {isCached && (
+              <span className="ml-2 text-xs text-slate-500">（已缓存）</span>
+            )}
           </p>
         </div>
-        <button
-          onClick={fetchAiSummary}
-          disabled={loading || records.length === 0}
-          className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-lg hover:from-indigo-700 hover:to-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-        >
-          {loading ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              分析中...
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-4 h-4" />
-              开始复盘
-            </>
+        <div className="flex items-center gap-2">
+          {insight && (
+            <button
+              onClick={refreshAnalysis}
+              disabled={loading || refreshing}
+              className="px-3 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              title="刷新分析（重新分析最新数据）"
+            >
+              {refreshing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  刷新中...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4" />
+                  刷新分析
+                </>
+              )}
+            </button>
           )}
-        </button>
+          <button
+            onClick={() => fetchAiSummary(false)}
+            disabled={loading || refreshing || records.length === 0}
+            className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-lg hover:from-indigo-700 hover:to-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                分析中...
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4" />
+                {insight ? '重新分析' : '开始复盘'}
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -274,7 +394,14 @@ ${recordsText}
         </div>
       )}
 
-      {!insight && !loading && records.length === 0 && (
+      {loadingCache && !insight && (
+        <div className="text-center py-12 bg-white rounded-lg border border-slate-200">
+          <Loader2 className="w-6 h-6 animate-spin text-indigo-600 mx-auto mb-4" />
+          <p className="text-slate-600">加载中...</p>
+        </div>
+      )}
+
+      {!insight && !loading && !loadingCache && records.length === 0 && (
         <div className="text-center py-12 bg-white rounded-lg border border-slate-200">
           <Sparkles className="w-12 h-12 text-slate-400 mx-auto mb-4" />
           <p className="text-slate-600">请先添加一些记录，然后进行 AI 复盘</p>

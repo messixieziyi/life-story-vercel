@@ -6,9 +6,11 @@ import VoiceRecordModal from './components/VoiceRecordModal'
 import LoginModal from './components/LoginModal'
 import StatsSummary from './components/StatsSummary'
 import AiInsightPanel from './components/AiInsightPanel'
+import AstrologyPanel from './components/AstrologyPanel'
 import { createSampleEvents } from './lib/sampleEvents'
 import { EMOTION_OPTIONS, IMPORTANCE_OPTIONS, EventType } from './lib/types'
 import { onAuthStateChange, logout } from './lib/supabase'
+import { hasBirthday } from './lib/userProfile'
 import { Heart, Plus, Download, Mic, LogOut, User } from 'lucide-react'
 
 function App() {
@@ -20,6 +22,7 @@ function App() {
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false)
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
   const [loadingSamples, setLoadingSamples] = useState(false)
+  const [hasUserBirthday, setHasUserBirthday] = useState(false)
   const { records, addRecord, deleteRecord, loading: recordsLoading } = useRecords(userId)
 
   // 加载示例事件
@@ -140,12 +143,32 @@ function App() {
       } else {
         setUser(null)
         setUserId(null)
+        setHasUserBirthday(false)
       }
       setAuthLoading(false)
     })
 
     return () => unsubscribe()
   }, [])
+
+  // 检查用户是否已设置生日
+  useEffect(() => {
+    if (userId) {
+      checkBirthday()
+    } else {
+      setHasUserBirthday(false)
+    }
+  }, [userId])
+
+  const checkBirthday = async () => {
+    try {
+      const hasBday = await hasBirthday(userId)
+      setHasUserBirthday(hasBday)
+    } catch (error) {
+      console.error('检查生日失败:', error)
+      setHasUserBirthday(false)
+    }
+  }
 
   // 处理登录成功
   const handleLoginSuccess = () => {
@@ -242,19 +265,27 @@ function App() {
               { id: 'journey', label: '历程' },
               { id: 'wishes', label: '愿望' },
               { id: 'ai', label: 'AI复盘' },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2 text-sm font-medium transition-colors ${
-                  activeTab === tab.id
-                    ? 'text-indigo-600 border-b-2 border-indigo-600'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+              { id: 'astrology', label: '星盘', requiresBirthday: true },
+            ].map((tab) => {
+              const isDisabled = tab.requiresBirthday && !hasUserBirthday
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${
+                    activeTab === tab.id
+                      ? 'text-indigo-600 border-b-2 border-indigo-600'
+                      : isDisabled
+                      ? 'text-slate-400 hover:text-slate-600 cursor-pointer'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title={isDisabled ? '点击设置出生信息' : ''}
+                >
+                  {tab.label}
+                  {isDisabled && <span className="ml-1 text-xs">🔒</span>}
+                </button>
+              )
+            })}
           </div>
         </div>
       </nav>
@@ -449,7 +480,11 @@ function App() {
         )}
 
         {activeTab === 'ai' && (
-          <AiInsightPanel records={records} />
+          <AiInsightPanel records={records} userId={userId} />
+        )}
+
+        {activeTab === 'astrology' && (
+          <AstrologyPanel userId={userId} records={records} />
         )}
       </main>
 
