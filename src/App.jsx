@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { initializeAuth } from './lib/firebase'
 import { useRecords } from './hooks/useRecords'
 import Timeline from './components/Timeline'
 import AchievementModal from './components/AchievementModal'
