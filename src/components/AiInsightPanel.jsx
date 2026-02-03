@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Sparkles, Loader2 } from 'lucide-react'
+import { marked } from 'marked'
 
 /**
  * AI 复盘面板组件
@@ -223,39 +224,51 @@ ${recordsText}
           <div
             className="prose prose-slate max-w-none
               prose-headings:text-slate-900
+              prose-h1:text-2xl
+              prose-h1:font-bold
+              prose-h2:text-xl
+              prose-h2:font-semibold
+              prose-h2:mt-6
+              prose-h2:mb-4
+              prose-h3:text-lg
+              prose-h3:font-semibold
+              prose-h3:mt-4
+              prose-h3:mb-3
               prose-p:text-slate-700
+              prose-p:leading-relaxed
+              prose-p:my-3
               prose-strong:text-slate-900
+              prose-strong:font-semibold
               prose-ul:text-slate-700
+              prose-ul:my-4
               prose-ol:text-slate-700
+              prose-ol:my-4
               prose-li:text-slate-700
+              prose-li:my-2
               prose-code:text-indigo-600
               prose-code:bg-indigo-50
-              prose-code:px-1
+              prose-code:px-1.5
               prose-code:py-0.5
-              prose-code:rounded"
+              prose-code:rounded
+              prose-code:text-sm
+              prose-pre:bg-slate-50
+              prose-pre:border
+              prose-pre:border-slate-200
+              prose-pre:rounded-lg
+              prose-pre:p-4
+              prose-pre:overflow-x-auto
+              prose-hr:border-slate-200
+              prose-hr:my-6
+              prose-blockquote:border-l-4
+              prose-blockquote:border-indigo-500
+              prose-blockquote:pl-4
+              prose-blockquote:italic
+              prose-blockquote:text-slate-600"
             dangerouslySetInnerHTML={{
-              __html: insight
-                .split('\n')
-                .map((line) => {
-                  // 简单的 Markdown 转 HTML
-                  if (line.startsWith('## ')) {
-                    return `<h2>${line.substring(3)}</h2>`
-                  }
-                  if (line.startsWith('### ')) {
-                    return `<h3>${line.substring(4)}</h3>`
-                  }
-                  if (line.startsWith('- ') || line.startsWith('* ')) {
-                    return `<li>${line.substring(2)}</li>`
-                  }
-                  if (line.match(/^\d+\. /)) {
-                    return `<li>${line.replace(/^\d+\. /, '')}</li>`
-                  }
-                  if (line.trim()) {
-                    return `<p>${line}</p>`
-                  }
-                  return ''
-                })
-                .join(''),
+              __html: marked.parse(insight, {
+                breaks: true, // 支持换行
+                gfm: true, // GitHub Flavored Markdown
+              }),
             }}
           />
         </div>
